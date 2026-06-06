@@ -80,3 +80,14 @@ export const PARKING_ZONES = [
 export const HOURLY_RATE = 5;
 export const MAX_DAILY_RATE = 60;
 export const FREE_PARKING_MINUTES = 30;
+
+export const VALID_COUPONS = [
+  { code: 'NEWUSER10', value: 10, type: 'fixed' as const, valid: true, minAmount: 20, description: '新用户专享10元券' },
+  { code: 'VIP20', value: 20, type: 'fixed' as const, valid: true, minAmount: 50, description: 'VIP会员20元抵扣券' },
+  { code: 'DISCOUNT20', value: 20, type: 'percent' as const, valid: true, minAmount: 30, description: '8折优惠券' },
+  { code: 'FREE5', value: 5, type: 'fixed' as const, valid: true, minAmount: 0, description: '5元无门槛券' },
+  { code: 'SUMMER15', value: 15, type: 'fixed' as const, valid: true, minAmount: 40, description: '夏季特惠15元券' },
+  { code: 'EXPIRED01', value: 10, type: 'fixed' as const, valid: false, minAmount: 0, description: '已过期优惠券' },
+];
+
+export const ASSIGNEES = ['张经理', '李客服', '王运维', '赵客服', '陈运维'];

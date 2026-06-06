@@ -1,6 +1,18 @@
 import { addHours, addDays, subDays } from 'date-fns';
-import { ParkingSpot, VehicleRecord, Order, Member, Device, Ticket, ZoneStats, HourlyTraffic, DailyRevenue } from '@/types';
-import { PARKING_ZONES, HOURLY_RATE, MAX_DAILY_RATE, FREE_PARKING_MINUTES } from './constants';
+import {
+  ParkingSpot,
+  VehicleRecord,
+  Order,
+  Member,
+  Device,
+  Ticket,
+  ZoneStats,
+  HourlyTraffic,
+  DailyRevenue,
+  Coupon,
+  BillingCalculation,
+} from '@/types';
+import { PARKING_ZONES, HOURLY_RATE, MAX_DAILY_RATE, FREE_PARKING_MINUTES, VALID_COUPONS } from './constants';
 import { generateRandomId, calculateDuration } from './format';
 
 const provinces = ['京', '沪', '粤', '苏', '浙', '川', '鄂', '鲁', '豫', '冀'];
@@ -19,16 +31,41 @@ function generatePhone(): string {
 
 const names = ['张三', '李四', '王五', '赵六', '陈七', '周八', '吴九', '郑十', '钱一', '孙二'];
 
+export function calculateBilling(entryTime: string, exitTime: string): BillingCalculation {
+  const durationMinutes = calculateDuration(entryTime, exitTime);
+  const freeMinutes = FREE_PARKING_MINUTES;
+  const billableMinutes = Math.max(0, durationMinutes - freeMinutes);
+  const hourlyRate = HOURLY_RATE;
+  const maxDailyRate = MAX_DAILY_RATE;
+
+  const baseAmount = billableMinutes > 0 ? Math.ceil(billableMinutes / 60) * hourlyRate : 0;
+  const cappedAmount = Math.min(baseAmount, maxDailyRate);
+  const totalAmount = cappedAmount;
+
+  return {
+    entryTime,
+    exitTime,
+    durationMinutes,
+    freeMinutes,
+    billableMinutes,
+    hourlyRate,
+    maxDailyRate,
+    baseAmount,
+    cappedAmount,
+    totalAmount,
+  };
+}
+
 export function generateParkingSpots(): ParkingSpot[] {
   const spots: ParkingSpot[] = [];
-  PARKING_ZONES.forEach(zone => {
+  PARKING_ZONES.forEach((zone) => {
     for (let i = 1; i <= zone.spots; i++) {
       const rand = Math.random();
       let status: ParkingSpot['status'] = 'available';
       if (rand < 0.65) status = 'occupied';
       else if (rand < 0.7) status = 'reserved';
       else if (rand < 0.72) status = 'disabled';
-      
+
       spots.push({
         id: `${zone.id}-${i}`,
         spotNumber: `${zone.id}${i.toString().padStart(3, '0')}`,
@@ -45,13 +82,13 @@ export function generateParkingSpots(): ParkingSpot[] {
 export function generateVehicleRecords(count: number = 50): VehicleRecord[] {
   const records: VehicleRecord[] = [];
   const now = new Date();
-  
+
   for (let i = 0; i < count; i++) {
     const isUnlicensed = Math.random() < 0.05;
     const isParked = Math.random() < 0.3;
     const entryTime = addHours(now, -Math.random() * 48);
     const exitTime = isParked ? undefined : addHours(entryTime, Math.random() * 8);
-    
+
     records.push({
       id: generateRandomId(),
       plateNumber: isUnlicensed ? '无牌车' : generatePlate(),
@@ -62,70 +99,84 @@ export function generateVehicleRecords(count: number = 50): VehicleRecord[] {
       correctedPlate: isUnlicensed && !isParked ? generatePlate() : undefined,
     });
   }
-  
+
   return records.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime());
 }
 
 export function generateOrders(count: number = 40): Order[] {
   const orders: Order[] = [];
   const now = new Date();
-  
+
   for (let i = 0; i < count; i++) {
     const entryTime = addHours(now, -Math.random() * 72);
     const exitTime = addHours(entryTime, Math.random() * 6);
-    const duration = calculateDuration(entryTime.toISOString(), exitTime.toISOString());
-    
-    let totalAmount = 0;
-    if (duration > FREE_PARKING_MINUTES) {
-      totalAmount = Math.min(Math.ceil(duration / 60) * HOURLY_RATE, MAX_DAILY_RATE);
-    }
-    
-    const discountAmount = Math.random() < 0.3 ? Math.floor(Math.random() * 20) : 0;
-    const paidAmount = totalAmount - discountAmount;
-    
+    const billing = calculateBilling(entryTime.toISOString(), exitTime.toISOString());
+
+    const hasCoupon = Math.random() < 0.3;
+    const coupon = hasCoupon ? VALID_COUPONS[Math.floor(Math.random() * VALID_COUPONS.length)] : null;
+    const discountAmount = coupon ? (coupon.type === 'fixed' ? coupon.value : Math.floor(billing.totalAmount * (coupon.value / 100))) : 0;
+    const paidAmount = Math.max(0, billing.totalAmount - discountAmount);
+
     const rand = Math.random();
     let status: Order['status'] = 'paid';
     if (rand < 0.15) status = 'pending';
     else if (rand < 0.2) status = 'abnormal';
     else if (rand < 0.22) status = 'refunded';
-    
+
     orders.push({
       id: 'ORD' + generateRandomId().toUpperCase(),
       plateNumber: generatePlate(),
       entryTime: entryTime.toISOString(),
       exitTime: exitTime.toISOString(),
-      duration,
-      totalAmount,
+      duration: billing.durationMinutes,
+      totalAmount: billing.totalAmount,
       discountAmount,
       paidAmount,
       status,
-      couponCode: discountAmount > 0 ? 'COUPON' + Math.floor(Math.random() * 1000) : undefined,
+      couponCode: coupon?.code,
+      couponApplied: hasCoupon,
       invoiceRequested: Math.random() < 0.25,
+      invoiceInfo: Math.random() < 0.25 ? {
+        title: '某某有限公司',
+        taxNumber: '91110000MA01234567',
+        email: 'finance@example.com',
+        requestedAt: subDays(now, Math.random() * 7).toISOString(),
+      } : undefined,
       remark: status === 'abnormal' ? '车牌识别异常' : undefined,
+      abnormalRemark: status === 'abnormal' ? '车牌识别异常' : undefined,
+      freeMinutes: FREE_PARKING_MINUTES,
+      hourlyRate: HOURLY_RATE,
+      maxDailyRate: MAX_DAILY_RATE,
+      createdAt: exitTime.toISOString(),
+      paidAt: status === 'paid' ? exitTime.toISOString() : undefined,
     });
   }
-  
+
   return orders.sort((a, b) => new Date(b.exitTime).getTime() - new Date(a.exitTime).getTime());
+}
+
+export function generateCoupons(): Coupon[] {
+  return VALID_COUPONS;
 }
 
 export function generateMembers(count: number = 30): Member[] {
   const members: Member[] = [];
   const now = new Date();
-  
+
   for (let i = 0; i < count; i++) {
     const cardTypes: Member['cardType'][] = ['monthly', 'quarterly', 'yearly'];
     const cardType = cardTypes[Math.floor(Math.random() * cardTypes.length)];
-    
+
     const rand = Math.random();
     let status: Member['status'] = 'active';
     if (rand < 0.15) status = 'expired';
     else if (rand < 0.2) status = 'blacklisted';
-    
+
     const expireDays = cardType === 'monthly' ? 30 : cardType === 'quarterly' ? 90 : 365;
-    const expireDate = status === 'expired' 
+    const expireDate = status === 'expired'
       ? subDays(now, Math.floor(Math.random() * 30))
       : addDays(now, Math.floor(Math.random() * expireDays));
-    
+
     members.push({
       id: generateRandomId(),
       name: names[Math.floor(Math.random() * names.length)],
@@ -136,7 +187,7 @@ export function generateMembers(count: number = 30): Member[] {
       status,
     });
   }
-  
+
   return members;
 }
 
@@ -175,6 +226,11 @@ export function generateTickets(): Ticket[] {
         { id: 'h1', action: '创建工单', operator: '张经理', remark: '用户投诉收费异常', timestamp: subDays(new Date(), 1).toISOString() },
         { id: 'h2', action: '分配工单', operator: '系统', remark: '分配给李客服', timestamp: subDays(new Date(), 1).toISOString() },
       ],
+      relatedObject: {
+        type: 'order',
+        id: 'ORD123456',
+        displayName: 'ORD123456 - 京A12345',
+      },
     },
     {
       id: 'TK202401002',
@@ -206,6 +262,11 @@ export function generateTickets(): Ticket[] {
         { id: 'h1', action: '创建工单', operator: '赵客服', remark: '用户来电咨询', timestamp: subDays(new Date(), 2).toISOString() },
         { id: 'h2', action: '处理完成', operator: '赵客服', remark: '已告知用户年卡续费8折优惠', timestamp: subDays(new Date(), 2).toISOString() },
       ],
+      relatedObject: {
+        type: 'member',
+        id: 'MBR001',
+        displayName: '张三 - 年卡会员',
+      },
     },
     {
       id: 'TK202401004',
@@ -243,7 +304,7 @@ export function generateTickets(): Ticket[] {
 }
 
 export function generateZoneStats(): ZoneStats[] {
-  return PARKING_ZONES.map(zone => {
+  return PARKING_ZONES.map((zone) => {
     const occupied = Math.floor(zone.spots * (0.5 + Math.random() * 0.3));
     return {
       name: zone.name,

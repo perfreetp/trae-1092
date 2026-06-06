@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -14,9 +14,10 @@ import {
   Cell,
   Legend,
 } from 'recharts';
-import { TrendingUp, Users, Clock, Download } from 'lucide-react';
+import { TrendingUp, Users, Clock, Download, Calendar, CheckCircle, XCircle } from 'lucide-react';
 import { useParkingStore } from '@/store/useParkingStore';
-import { formatCurrency } from '@/utils/format';
+import { formatCurrency, formatDateTime } from '@/utils/format';
+import { startOfDay, startOfWeek, startOfMonth, endOfDay, endOfWeek, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns';
 
 export const Reports: React.FC = () => {
   const dailyRevenue = useParkingStore((state) => state.dailyRevenue);
@@ -24,10 +25,48 @@ export const Reports: React.FC = () => {
   const zoneStats = useParkingStore((state) => state.zoneStats);
   const orders = useParkingStore((state) => state.orders);
 
-  const [period, setPeriod] = useState<'day' | 'week' | 'month'>('week');
+  const [period, setPeriod] = useState<'day' | 'week' | 'month' | 'custom'>('week');
+  const [customStartDate, setCustomStartDate] = useState(format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'));
+  const [customEndDate, setCustomEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const totalRevenue = dailyRevenue.reduce((sum, d) => sum + d.revenue, 0);
-  const totalOrders = dailyRevenue.reduce((sum, d) => sum + d.orders, 0);
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    let start: Date, end: Date;
+
+    if (period === 'day') {
+      start = startOfDay(now);
+      end = endOfDay(now);
+    } else if (period === 'week') {
+      start = startOfWeek(now, { weekStartsOn: 1 });
+      end = endOfWeek(now, { weekStartsOn: 1 });
+    } else if (period === 'month') {
+      start = startOfMonth(now);
+      end = endOfMonth(now);
+    } else {
+      start = parseISO(customStartDate);
+      end = endOfDay(parseISO(customEndDate));
+    }
+
+    return { start, end };
+  }, [period, customStartDate, customEndDate]);
+
+  const filteredRevenue = useMemo(() => {
+    return dailyRevenue.filter((d) => {
+      const date = parseISO(d.date);
+      return isWithinInterval(date, { start: dateRange.start, end: dateRange.end });
+    });
+  }, [dailyRevenue, dateRange]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const date = parseISO(o.paidAt || o.createdAt);
+      return isWithinInterval(date, { start: dateRange.start, end: dateRange.end });
+    });
+  }, [orders, dateRange]);
+
+  const totalRevenue = filteredRevenue.reduce((sum, d) => sum + d.revenue, 0);
+  const totalOrders = filteredRevenue.reduce((sum, d) => sum + d.orders, 0);
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
   const peakHours = hourlyTraffic
@@ -43,11 +82,83 @@ export const Reports: React.FC = () => {
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4'];
 
   const statusDistribution = [
-    { name: '已支付', value: orders.filter((o) => o.status === 'paid').length, color: '#10B981' },
-    { name: '待支付', value: orders.filter((o) => o.status === 'pending').length, color: '#F59E0B' },
-    { name: '异常', value: orders.filter((o) => o.status === 'abnormal').length, color: '#EF4444' },
-    { name: '已退款', value: orders.filter((o) => o.status === 'refunded').length, color: '#8B5CF6' },
+    { name: '已支付', value: filteredOrders.filter((o) => o.status === 'paid').length, color: '#10B981' },
+    { name: '待支付', value: filteredOrders.filter((o) => o.status === 'pending').length, color: '#F59E0B' },
+    { name: '异常', value: filteredOrders.filter((o) => o.status === 'abnormal').length, color: '#EF4444' },
+    { name: '已退款', value: filteredOrders.filter((o) => o.status === 'refunded').length, color: '#8B5CF6' },
   ];
+
+  const showMessage = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 3000);
+  };
+
+  const generateCSV = () => {
+    const headers = ['日期', '收入', '订单数', '入场车流量', '出场车流量'];
+    const revenueMap = new Map(filteredRevenue.map((d) => [d.date, d]));
+    
+    const rows = filteredRevenue.map((d) => {
+      const trafficData = hourlyTraffic.find((_, i) => i < 3) || { entry: 0, exit: 0 };
+      return [
+        d.date,
+        d.revenue.toFixed(2),
+        d.orders.toString(),
+        '-',
+        '-',
+      ];
+    });
+
+    const csvContent = '\ufeff' + [
+      headers.join(','),
+      ...rows.map((row) => row.join(',')),
+    ].join('\n');
+
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStr = `${format(dateRange.start, 'yyyyMMdd')}-${format(dateRange.end, 'yyyyMMdd')}`;
+    link.href = url;
+    link.setAttribute('download', `停车运营报表_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showMessage('success', '报表导出成功');
+  };
+
+  const generateOrdersCSV = () => {
+    const headers = ['订单号', '车牌号', '入场时间', '出场时间', '应收金额', '实付金额', '优惠券', '状态', '支付时间'];
+    const rows = filteredOrders.map((o) => [
+      o.id,
+      o.plateNumber,
+      formatDateTime(o.entryTime),
+      formatDateTime(o.exitTime || ''),
+      o.totalAmount.toFixed(2),
+      o.paidAmount?.toFixed(2) || '0.00',
+      o.couponCode || '-',
+      o.status,
+      o.paidAt ? formatDateTime(o.paidAt) : '-',
+    ]);
+
+    const csvContent = '\ufeff' + [
+      headers.join(','),
+      ...rows.map((row) => row.join(',')),
+    ].join('\n');
+
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStr = `${format(dateRange.start, 'yyyyMMdd')}-${format(dateRange.end, 'yyyyMMdd')}`;
+    link.href = url;
+    link.setAttribute('download', `订单明细_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showMessage('success', '订单明细导出成功');
+  };
 
   return (
     <div className="space-y-6">
@@ -58,7 +169,7 @@ export const Reports: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <div className="flex rounded-lg border border-slate-700 bg-slate-800/50">
-            {(['day', 'week', 'month'] as const).map((p) => (
+            {(['day', 'week', 'month', 'custom'] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
@@ -68,15 +179,76 @@ export const Reports: React.FC = () => {
                     : 'text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                {p === 'day' ? '今日' : p === 'week' ? '本周' : '本月'}
+                {p === 'day' ? '今日' : p === 'week' ? '本周' : p === 'month' ? '本月' : '自定义'}
               </button>
             ))}
           </div>
-          <button className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-700">
-            <Download className="h-4 w-4" />
-            导出报表
-          </button>
+          {period === 'custom' && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2">
+                <Calendar className="h-4 w-4 text-slate-400" />
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="bg-transparent text-sm text-white outline-none"
+                />
+              </div>
+              <span className="text-slate-400">至</span>
+              <div className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-2">
+                <Calendar className="h-4 w-4 text-slate-400" />
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="bg-transparent text-sm text-white outline-none"
+                />
+              </div>
+            </div>
+          )}
+          <div className="relative group">
+            <button className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-slate-700">
+              <Download className="h-4 w-4" />
+              导出报表
+            </button>
+            <div className="absolute right-0 top-full mt-1 hidden w-40 rounded-lg border border-slate-700 bg-slate-800 py-1 group-hover:block z-10">
+              <button
+                onClick={generateCSV}
+                className="w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-slate-700"
+              >
+                导出汇总报表
+              </button>
+              <button
+                onClick={generateOrdersCSV}
+                className="w-full px-3 py-2 text-left text-sm text-slate-300 hover:bg-slate-700"
+              >
+                导出订单明细
+              </button>
+            </div>
+          </div>
         </div>
+      </div>
+
+      {message && (
+        <div
+          className={`flex items-center gap-2 rounded-lg px-4 py-3 ${
+            message.type === 'success'
+              ? 'bg-emerald-500/20 text-emerald-400'
+              : 'bg-red-500/20 text-red-400'
+          }`}
+        >
+          {message.type === 'success' ? (
+            <CheckCircle className="h-4 w-4" />
+          ) : (
+            <XCircle className="h-4 w-4" />
+          )}
+          {message.text}
+        </div>
+      )}
+
+      <div className="rounded-lg bg-blue-500/10 px-4 py-2 text-xs text-blue-400">
+        当前筛选：{format(dateRange.start, 'yyyy-MM-dd')} 至 {format(dateRange.end, 'yyyy-MM-dd')}，
+        共 {filteredRevenue.length} 天数据，{filteredOrders.length} 条订单
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -135,7 +307,7 @@ export const Reports: React.FC = () => {
           <h3 className="text-base font-semibold text-white">收入趋势</h3>
           <div className="mt-4 h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyRevenue}>
+              <BarChart data={filteredRevenue}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="date" stroke="#64748B" fontSize={12} />
                 <YAxis stroke="#64748B" fontSize={12} />

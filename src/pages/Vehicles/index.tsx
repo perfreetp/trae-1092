@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Search, Filter, Edit, Plus, AlertCircle, Car as CarIcon } from 'lucide-react';
+import { Search, Filter, Edit, Plus, AlertCircle, Car as CarIcon, Check } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useParkingStore } from '@/store/useParkingStore';
 import { VehicleRecord } from '@/types';
-import { formatDateTime } from '@/utils/format';
+import { formatDateTime, generateRandomId } from '@/utils/format';
 
 export const Vehicles: React.FC = () => {
   const vehicleRecords = useParkingStore((state) => state.vehicleRecords);
@@ -17,10 +17,12 @@ export const Vehicles: React.FC = () => {
   const [selectedRecord, setSelectedRecord] = useState<VehicleRecord | null>(null);
   const [editPlate, setEditPlate] = useState('');
   const [newPlate, setNewPlate] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const filteredRecords = vehicleRecords.filter((r) => {
     const matchSearch = r.plateNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (r.correctedPlate?.toLowerCase().includes(searchQuery.toLowerCase()));
+      (r.correctedPlate?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (r.tempPlate?.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchStatus = filterStatus === 'all' || r.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -37,23 +39,31 @@ export const Vehicles: React.FC = () => {
         correctedPlate: editPlate,
         plateNumber: editPlate,
         isUnlicensed: false,
+        tempPlate: undefined,
       });
+      setSuccessMessage('车牌纠错成功');
+      setTimeout(() => setSuccessMessage(''), 2000);
     }
     setShowEditModal(false);
     setSelectedRecord(null);
   };
 
   const handleAddUnlicensed = () => {
-    if (newPlate) {
-      addVehicleRecord({
-        id: Math.random().toString(36).substring(2, 10),
-        plateNumber: newPlate || '无牌车',
-        entryTime: new Date().toISOString(),
-        status: 'parking',
-        isUnlicensed: !newPlate,
-        correctedPlate: newPlate || undefined,
-      });
-    }
+    const isUnlicensed = !newPlate.trim();
+    const plateNumber = isUnlicensed ? '无牌车' : newPlate.trim();
+
+    const newRecord: VehicleRecord = {
+      id: generateRandomId(),
+      plateNumber,
+      entryTime: new Date().toISOString(),
+      status: 'parking',
+      isUnlicensed,
+      tempPlate: isUnlicensed ? undefined : newPlate.trim(),
+    };
+
+    addVehicleRecord(newRecord);
+    setSuccessMessage(isUnlicensed ? '无牌车登记成功' : '车辆登记成功');
+    setTimeout(() => setSuccessMessage(''), 2000);
     setShowAddModal(false);
     setNewPlate('');
   };
@@ -73,6 +83,13 @@ export const Vehicles: React.FC = () => {
           无牌车登记
         </button>
       </div>
+
+      {successMessage && (
+        <div className="flex items-center gap-2 rounded-lg bg-emerald-500/20 px-4 py-3 text-emerald-400">
+          <Check className="h-4 w-4" />
+          {successMessage}
+        </div>
+      )}
 
       <div className="flex items-center gap-4 rounded-xl bg-slate-800/50 p-4">
         <div className="relative flex-1">
@@ -137,6 +154,11 @@ export const Vehicles: React.FC = () => {
                       无牌车
                     </span>
                   )}
+                  {record.tempPlate && !record.isUnlicensed && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-xs text-blue-400">
+                      临时车牌
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
@@ -155,7 +177,7 @@ export const Vehicles: React.FC = () => {
 
       {showEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-96 rounded-xl bg-slate-800 p-6">
+          <div className="w-96 rounded-xl bg-slate-800 p-6 animate-fade-in">
             <h3 className="text-lg font-semibold text-white">车牌纠错</h3>
             <p className="mt-1 text-sm text-slate-400">修改识别错误的车牌号码</p>
             <div className="mt-4">
@@ -188,18 +210,30 @@ export const Vehicles: React.FC = () => {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-96 rounded-xl bg-slate-800 p-6">
+          <div className="w-96 rounded-xl bg-slate-800 p-6 animate-fade-in">
             <h3 className="text-lg font-semibold text-white">无牌车登记</h3>
             <p className="mt-1 text-sm text-slate-400">手动登记无牌车辆信息</p>
-            <div className="mt-4">
-              <label className="text-sm text-slate-300">车牌号（如有）</label>
-              <input
-                type="text"
-                value={newPlate}
-                onChange={(e) => setNewPlate(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-                placeholder="请输入车牌号，不填则标记为无牌车"
-              />
+            <div className="mt-4 space-y-4">
+              <div className="rounded-lg bg-yellow-500/10 p-3">
+                <p className="text-xs text-yellow-400">
+                  <AlertCircle className="inline h-3 w-3 mr-1" />
+                  不填写车牌号将直接标记为"无牌车"
+                </p>
+              </div>
+              <div>
+                <label className="text-sm text-slate-300">车牌号（选填）</label>
+                <input
+                  type="text"
+                  value={newPlate}
+                  onChange={(e) => setNewPlate(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                  placeholder="请输入车牌号，不填则标记为无牌车"
+                />
+              </div>
+              <div className="text-xs text-slate-500">
+                <p>• 不填车牌号：登记为"无牌车"，并带有无牌车标记</p>
+                <p>• 填写车牌号：按填写内容登记，可后续进行纠错</p>
+              </div>
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button

@@ -17,6 +17,14 @@ export interface VehicleRecord {
   exitImage?: string;
   isUnlicensed: boolean;
   correctedPlate?: string;
+  tempPlate?: string;
+}
+
+export interface InvoiceInfo {
+  title: string;
+  taxNumber?: string;
+  email: string;
+  requestedAt: string;
 }
 
 export interface Order {
@@ -30,8 +38,25 @@ export interface Order {
   paidAmount: number;
   status: 'pending' | 'paid' | 'refunded' | 'abnormal';
   couponCode?: string;
+  couponApplied: boolean;
   invoiceRequested: boolean;
+  invoiceInfo?: InvoiceInfo;
   remark?: string;
+  abnormalRemark?: string;
+  freeMinutes: number;
+  hourlyRate: number;
+  maxDailyRate: number;
+  createdAt: string;
+  paidAt?: string;
+}
+
+export interface Coupon {
+  code: string;
+  value: number;
+  type: 'fixed' | 'percent';
+  valid: boolean;
+  minAmount?: number;
+  description: string;
 }
 
 export interface Member {
@@ -61,6 +86,12 @@ export interface TicketHistory {
   timestamp: string;
 }
 
+export interface RelatedObject {
+  type: 'vehicle' | 'order' | 'member';
+  id: string;
+  displayName: string;
+}
+
 export interface Ticket {
   id: string;
   title: string;
@@ -73,6 +104,7 @@ export interface Ticket {
   createdAt: string;
   updatedAt: string;
   history: TicketHistory[];
+  relatedObject?: RelatedObject;
 }
 
 export interface ZoneStats {
@@ -92,4 +124,17 @@ export interface DailyRevenue {
   date: string;
   revenue: number;
   orders: number;
+}
+
+export interface BillingCalculation {
+  entryTime: string;
+  exitTime: string;
+  durationMinutes: number;
+  freeMinutes: number;
+  billableMinutes: number;
+  hourlyRate: number;
+  maxDailyRate: number;
+  baseAmount: number;
+  cappedAmount: number;
+  totalAmount: number;
 }
