@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Search,
   Filter,
@@ -26,6 +27,7 @@ import { calculateBilling } from '@/utils/mock';
 import { VALID_COUPONS, HOURLY_RATE, MAX_DAILY_RATE, FREE_PARKING_MINUTES } from '@/utils/constants';
 
 export const Orders: React.FC = () => {
+  const location = useLocation();
   const orders = useParkingStore((state) => state.orders);
   const vehicleRecords = useParkingStore((state) => state.vehicleRecords);
   const tickets = useParkingStore((state) => state.tickets);
@@ -41,6 +43,13 @@ export const Orders: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  useEffect(() => {
+    const state = location.state as { filterStatus?: string };
+    if (state?.filterStatus) {
+      setFilterStatus(state.filterStatus);
+    }
+  }, [location.state]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showCouponModal, setShowCouponModal] = useState(false);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);

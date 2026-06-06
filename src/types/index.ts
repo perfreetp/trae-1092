@@ -97,7 +97,7 @@ export interface TicketHistory {
 }
 
 export interface RelatedObject {
-  type: 'vehicle' | 'order' | 'member';
+  type: 'vehicle' | 'order' | 'member' | 'device';
   id: string;
   displayName: string;
 }

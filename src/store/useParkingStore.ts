@@ -481,7 +481,7 @@ export const useParkingStore = create<ParkingState>((set, get) => ({
         },
       ],
       relatedObject: {
-        type: 'order',
+        type: 'device',
         id: device.id,
         displayName: `${device.name} - ${device.location}`,
       },

@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Plus,
   Filter,
@@ -19,15 +20,17 @@ import {
 } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useParkingStore } from '@/store/useParkingStore';
-import { Ticket, RelatedObject, Order, VehicleRecord, Member } from '@/types';
+import { Ticket, RelatedObject, Order, VehicleRecord, Member, Device } from '@/types';
 import { formatDateTime, generateRandomId } from '@/utils/format';
 import { TICKET_TYPE_LABELS, TICKET_STATUS_LABELS, STATUS_LABELS, ASSIGNEES } from '@/utils/constants';
 
 export const Tickets: React.FC = () => {
+  const location = useLocation();
   const tickets = useParkingStore((state) => state.tickets);
   const orders = useParkingStore((state) => state.orders);
   const vehicleRecords = useParkingStore((state) => state.vehicleRecords);
   const members = useParkingStore((state) => state.members);
+  const devices = useParkingStore((state) => state.devices);
   const addTicket = useParkingStore((state) => state.addTicket);
   const updateTicket = useParkingStore((state) => state.updateTicket);
   const addTicketHistory = useParkingStore((state) => state.addTicketHistory);
@@ -37,6 +40,13 @@ export const Tickets: React.FC = () => {
   const currentUser = useParkingStore((state) => state.currentUser);
 
   const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  useEffect(() => {
+    const state = location.state as { filterStatus?: string };
+    if (state?.filterStatus) {
+      setFilterStatus(state.filterStatus);
+    }
+  }, [location.state]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -322,21 +332,52 @@ export const Tickets: React.FC = () => {
                 </div>
 
                 {selectedTicketData.relatedObject && (
-                  <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-500/10 px-3 py-2">
-                    <Link2 className="h-4 w-4 text-blue-400" />
-                    <span className="text-xs text-blue-400">
-                      关联{selectedTicketData.relatedObject.type === 'order' ? '订单' : selectedTicketData.relatedObject.type === 'vehicle' ? '车辆' : '会员'}：
-                      {selectedTicketData.relatedObject.displayName}
-                    </span>
-                    {selectedTicketData.relatedObject.type === 'order' && (
-                      <Receipt className="h-3 w-3 text-blue-400 ml-auto" />
-                    )}
-                    {selectedTicketData.relatedObject.type === 'vehicle' && (
-                      <Car className="h-3 w-3 text-blue-400 ml-auto" />
-                    )}
-                    {selectedTicketData.relatedObject.type === 'member' && (
-                      <UserCircle className="h-3 w-3 text-blue-400 ml-auto" />
-                    )}
+                  <div className="mt-3 rounded-lg bg-blue-500/10 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Link2 className="h-4 w-4 text-blue-400" />
+                      <span className="text-xs text-blue-400">
+                        关联{selectedTicketData.relatedObject.type === 'order' ? '订单' : selectedTicketData.relatedObject.type === 'vehicle' ? '车辆' : selectedTicketData.relatedObject.type === 'device' ? '设备' : '会员'}：
+                        {selectedTicketData.relatedObject.displayName}
+                      </span>
+                      {selectedTicketData.relatedObject.type === 'order' && (
+                        <Receipt className="h-3 w-3 text-blue-400 ml-auto" />
+                      )}
+                      {selectedTicketData.relatedObject.type === 'vehicle' && (
+                        <Car className="h-3 w-3 text-blue-400 ml-auto" />
+                      )}
+                      {selectedTicketData.relatedObject.type === 'device' && (
+                        <AlertCircle className="h-3 w-3 text-blue-400 ml-auto" />
+                      )}
+                      {selectedTicketData.relatedObject.type === 'member' && (
+                        <UserCircle className="h-3 w-3 text-blue-400 ml-auto" />
+                      )}
+                    </div>
+                    {selectedTicketData.relatedObject.type === 'device' && (() => {
+                      const device = devices.find((d) => d.id === selectedTicketData.relatedObject?.id);
+                      if (!device) return null;
+                      return (
+                        <div className="mt-2 space-y-1 border-t border-blue-500/20 pt-2">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-400">设备名称:</span>
+                            <span className="text-white">{device.name}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-400">设备位置:</span>
+                            <span className="text-white">{device.location}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-400">当前状态:</span>
+                            <StatusBadge status={device.status} size="sm" />
+                          </div>
+                          {device.zone && (
+                            <div className="flex justify-between text-xs">
+                              <span className="text-slate-400">所属区域:</span>
+                              <span className="text-white">{device.zone}区 ({device.floor})</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

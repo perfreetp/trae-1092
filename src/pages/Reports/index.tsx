@@ -86,53 +86,27 @@ export const Reports: React.FC = () => {
     return { start, end };
   }, [period, customStartDate, customEndDate]);
 
+  const parseMmDdDate = (dateStr: string): Date => {
+    const [month, day] = dateStr.split('/').map(Number);
+    const year = new Date().getFullYear();
+    return new Date(year, month - 1, day);
+  };
+
+  const getZoneFloor = (zoneId: string): string | undefined => {
+    const zone = PARKING_ZONES.find((z) => z.id === zoneId);
+    return zone?.floor;
+  };
+
   const filteredRevenue = useMemo(() => {
     return dailyRevenue.filter((d) => {
-      const date = parseISO(d.date + '/' + new Date().getFullYear());
+      const date = parseMmDdDate(d.date);
       const dateInRange = isWithinInterval(date, { start: dateRange.start, end: dateRange.end });
       const zoneMatch = zoneFilter === 'all' || d.zone === zoneFilter;
-      return dateInRange && zoneMatch;
+      const zoneFloor = getZoneFloor(d.zone || '');
+      const floorMatch = floorFilter === 'all' || zoneFloor === floorFilter;
+      return dateInRange && zoneMatch && floorMatch;
     });
-  }, [dailyRevenue, dateRange, zoneFilter]);
-
-  const aggregatedRevenue = useMemo(() => {
-    const dateMap = new Map<string, { revenue: number; orders: number; entryTraffic: number; exitTraffic: number }>();
-    filteredRevenue.forEach((d) => {
-      const existing = dateMap.get(d.date) || { revenue: 0, orders: 0, entryTraffic: 0, exitTraffic: 0 };
-      dateMap.set(d.date, {
-        revenue: existing.revenue + d.revenue,
-        orders: existing.orders + d.orders,
-        entryTraffic: existing.entryTraffic + (d.entryTraffic || 0),
-        exitTraffic: existing.exitTraffic + (d.exitTraffic || 0),
-      });
-    });
-    return Array.from(dateMap.entries())
-      .map(([date, data]) => ({ date, ...data }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [filteredRevenue]);
-
-  const filteredTraffic = useMemo(() => {
-    return hourlyTraffic.filter((t) => {
-      const date = parseISO(t.date + '/' + new Date().getFullYear());
-      const dateInRange = isWithinInterval(date, { start: dateRange.start, end: dateRange.end });
-      const zoneMatch = zoneFilter === 'all' || t.zone === zoneFilter;
-      return dateInRange && zoneMatch;
-    });
-  }, [hourlyTraffic, dateRange, zoneFilter]);
-
-  const aggregatedTraffic = useMemo(() => {
-    const hourMap = new Map<string, { entry: number; exit: number }>();
-    filteredTraffic.forEach((t) => {
-      const existing = hourMap.get(t.hour) || { entry: 0, exit: 0 };
-      hourMap.set(t.hour, {
-        entry: existing.entry + t.entry,
-        exit: existing.exit + t.exit,
-      });
-    });
-    return Array.from(hourMap.entries())
-      .map(([hour, data]) => ({ hour, ...data, total: data.entry + data.exit }))
-      .sort((a, b) => a.hour.localeCompare(b.hour));
-  }, [filteredTraffic]);
+  }, [dailyRevenue, dateRange, zoneFilter, floorFilter]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -144,6 +118,74 @@ export const Reports: React.FC = () => {
     });
   }, [orders, dateRange, zoneFilter, floorFilter]);
 
+  const aggregatedRevenue = useMemo(() => {
+    const dateMap = new Map<string, { revenue: number; orders: number; entryTraffic: number; exitTraffic: number }>();
+    
+    filteredRevenue.forEach((d) => {
+      const existing = dateMap.get(d.date) || { revenue: 0, orders: 0, entryTraffic: 0, exitTraffic: 0 };
+      dateMap.set(d.date, {
+        revenue: existing.revenue + d.revenue,
+        orders: existing.orders + d.orders,
+        entryTraffic: existing.entryTraffic + (d.entryTraffic || 0),
+        exitTraffic: existing.exitTraffic + (d.exitTraffic || 0),
+      });
+    });
+
+    filteredOrders.forEach((o) => {
+      if (o.status === 'paid' && o.paidAt) {
+        const dateStr = format(parseISO(o.paidAt), 'MM/dd');
+        const existing = dateMap.get(dateStr) || { revenue: 0, orders: 0, entryTraffic: 0, exitTraffic: 0 };
+        dateMap.set(dateStr, {
+          revenue: existing.revenue + o.paidAmount,
+          orders: existing.orders + 1,
+          entryTraffic: existing.entryTraffic,
+          exitTraffic: existing.exitTraffic + 1,
+        });
+      }
+    });
+
+    return Array.from(dateMap.entries())
+      .map(([date, data]) => ({ date, ...data }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [filteredRevenue, filteredOrders]);
+
+  const filteredTraffic = useMemo(() => {
+    return hourlyTraffic.filter((t) => {
+      const date = parseMmDdDate(t.date);
+      const dateInRange = isWithinInterval(date, { start: dateRange.start, end: dateRange.end });
+      const zoneMatch = zoneFilter === 'all' || t.zone === zoneFilter;
+      const zoneFloor = getZoneFloor(t.zone || '');
+      const floorMatch = floorFilter === 'all' || zoneFloor === floorFilter;
+      return dateInRange && zoneMatch && floorMatch;
+    });
+  }, [hourlyTraffic, dateRange, zoneFilter, floorFilter]);
+
+  const aggregatedTraffic = useMemo(() => {
+    const hourMap = new Map<string, { entry: number; exit: number }>();
+    filteredTraffic.forEach((t) => {
+      const existing = hourMap.get(t.hour) || { entry: 0, exit: 0 };
+      hourMap.set(t.hour, {
+        entry: existing.entry + t.entry,
+        exit: existing.exit + t.exit,
+      });
+    });
+
+    filteredOrders.forEach((o) => {
+      if (o.status === 'paid' && o.paidAt) {
+        const hour = format(parseISO(o.paidAt), 'HH') + ':00';
+        const existing = hourMap.get(hour) || { entry: 0, exit: 0 };
+        hourMap.set(hour, {
+          entry: existing.entry,
+          exit: existing.exit + 1,
+        });
+      }
+    });
+
+    return Array.from(hourMap.entries())
+      .map(([hour, data]) => ({ hour, ...data, total: data.entry + data.exit }))
+      .sort((a, b) => a.hour.localeCompare(b.hour));
+  }, [filteredTraffic, filteredOrders]);
+
   const totalRevenue = aggregatedRevenue.reduce((sum, d) => sum + d.revenue, 0);
   const totalOrders = aggregatedRevenue.reduce((sum, d) => sum + d.orders, 0);
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
@@ -151,7 +193,7 @@ export const Reports: React.FC = () => {
   const totalExitTraffic = aggregatedRevenue.reduce((sum, d) => sum + d.exitTraffic, 0);
   const totalTraffic = totalEntryTraffic + totalExitTraffic;
 
-  const peakHours = aggregatedTraffic
+  const peakHours = [...aggregatedTraffic]
     .sort((a, b) => b.total - a.total)
     .slice(0, 3);
 
@@ -161,7 +203,13 @@ export const Reports: React.FC = () => {
   const openTicketsCount = tickets.filter((t) => t.status !== 'closed' && t.status !== 'resolved').length;
 
   const pieData = zoneStats
-    .filter((z) => zoneFilter === 'all' || z.name === zoneFilter + '区')
+    .filter((z) => {
+      const zoneId = z.name.replace('区', '');
+      const zoneMatch = zoneFilter === 'all' || zoneId === zoneFilter;
+      const zoneFloor = getZoneFloor(zoneId);
+      const floorMatch = floorFilter === 'all' || zoneFloor === floorFilter;
+      return zoneMatch && floorMatch;
+    })
     .map((z) => ({
       name: z.name,
       value: z.occupied,
