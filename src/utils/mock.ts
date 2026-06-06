@@ -1,4 +1,4 @@
-import { addHours, addDays, subDays } from 'date-fns';
+import { addHours, addDays, subDays, format } from 'date-fns';
 import {
   ParkingSpot,
   VehicleRecord,
@@ -79,15 +79,16 @@ export function generateParkingSpots(): ParkingSpot[] {
   return spots;
 }
 
-export function generateVehicleRecords(count: number = 50): VehicleRecord[] {
+export function generateVehicleRecords(count: number = 80): VehicleRecord[] {
   const records: VehicleRecord[] = [];
   const now = new Date();
 
   for (let i = 0; i < count; i++) {
     const isUnlicensed = Math.random() < 0.05;
-    const isParked = Math.random() < 0.3;
-    const entryTime = addHours(now, -Math.random() * 48);
+    const isParked = Math.random() < 0.35;
+    const entryTime = addHours(now, -Math.random() * 72);
     const exitTime = isParked ? undefined : addHours(entryTime, Math.random() * 8);
+    const zone = PARKING_ZONES[Math.floor(Math.random() * PARKING_ZONES.length)];
 
     records.push({
       id: generateRandomId(),
@@ -97,31 +98,37 @@ export function generateVehicleRecords(count: number = 50): VehicleRecord[] {
       status: isParked ? 'parking' : 'exited',
       isUnlicensed,
       correctedPlate: isUnlicensed && !isParked ? generatePlate() : undefined,
+      zone: zone.id,
+      floor: zone.floor,
+      orderId: !isParked ? 'ORD' + Math.floor(Math.random() * 100000) : undefined,
     });
   }
 
   return records.sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime());
 }
 
-export function generateOrders(count: number = 40): Order[] {
+export function generateOrders(count: number = 80): Order[] {
   const orders: Order[] = [];
   const now = new Date();
 
   for (let i = 0; i < count; i++) {
-    const entryTime = addHours(now, -Math.random() * 72);
-    const exitTime = addHours(entryTime, Math.random() * 6);
+    const daysAgo = Math.floor(Math.random() * 30);
+    const entryTime = addHours(subDays(now, daysAgo), Math.random() * 12);
+    const exitTime = addHours(entryTime, Math.random() * 8);
     const billing = calculateBilling(entryTime.toISOString(), exitTime.toISOString());
+    const zone = PARKING_ZONES[Math.floor(Math.random() * PARKING_ZONES.length)];
 
-    const hasCoupon = Math.random() < 0.3;
-    const coupon = hasCoupon ? VALID_COUPONS[Math.floor(Math.random() * VALID_COUPONS.length)] : null;
+    const hasCoupon = Math.random() < 0.25;
+    const validCoupons = VALID_COUPONS.filter((c) => c.valid);
+    const coupon = hasCoupon ? validCoupons[Math.floor(Math.random() * validCoupons.length)] : null;
     const discountAmount = coupon ? (coupon.type === 'fixed' ? coupon.value : Math.floor(billing.totalAmount * (coupon.value / 100))) : 0;
     const paidAmount = Math.max(0, billing.totalAmount - discountAmount);
 
     const rand = Math.random();
     let status: Order['status'] = 'paid';
-    if (rand < 0.15) status = 'pending';
-    else if (rand < 0.2) status = 'abnormal';
-    else if (rand < 0.22) status = 'refunded';
+    if (rand < 0.12) status = 'pending';
+    else if (rand < 0.18) status = 'abnormal';
+    else if (rand < 0.2) status = 'refunded';
 
     orders.push({
       id: 'ORD' + generateRandomId().toUpperCase(),
@@ -135,12 +142,12 @@ export function generateOrders(count: number = 40): Order[] {
       status,
       couponCode: coupon?.code,
       couponApplied: hasCoupon,
-      invoiceRequested: Math.random() < 0.25,
-      invoiceInfo: Math.random() < 0.25 ? {
+      invoiceRequested: Math.random() < 0.2,
+      invoiceInfo: Math.random() < 0.15 ? {
         title: '某某有限公司',
         taxNumber: '91110000MA01234567',
         email: 'finance@example.com',
-        requestedAt: subDays(now, Math.random() * 7).toISOString(),
+        requestedAt: addHours(exitTime, 1).toISOString(),
       } : undefined,
       remark: status === 'abnormal' ? '车牌识别异常' : undefined,
       abnormalRemark: status === 'abnormal' ? '车牌识别异常' : undefined,
@@ -148,7 +155,9 @@ export function generateOrders(count: number = 40): Order[] {
       hourlyRate: HOURLY_RATE,
       maxDailyRate: MAX_DAILY_RATE,
       createdAt: exitTime.toISOString(),
-      paidAt: status === 'paid' ? exitTime.toISOString() : undefined,
+      paidAt: status === 'paid' ? addHours(exitTime, Math.random() * 0.5).toISOString() : undefined,
+      zone: zone.id,
+      floor: zone.floor,
     });
   }
 
@@ -193,18 +202,18 @@ export function generateMembers(count: number = 30): Member[] {
 
 export function generateDevices(): Device[] {
   const devices: Device[] = [
-    { id: 'gate-1', name: '东门入口道闸', type: 'gate', location: '东入口', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'gate-2', name: '东门出口道闸', type: 'gate', location: '东出口', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'gate-3', name: '南门入口道闸', type: 'gate', location: '南入口', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'gate-4', name: '南门出口道闸', type: 'gate', location: '南出口', status: 'fault', lastHeartbeat: addHours(new Date(), -2).toISOString() },
-    { id: 'cam-1', name: '东入口摄像机', type: 'camera', location: '东入口', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'cam-2', name: '东出口摄像机', type: 'camera', location: '东出口', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'cam-3', name: '南入口摄像机', type: 'camera', location: '南入口', status: 'offline', lastHeartbeat: addHours(new Date(), -6).toISOString() },
-    { id: 'cam-4', name: '南出口摄像机', type: 'camera', location: '南出口', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'cam-5', name: 'B1层A区摄像机', type: 'camera', location: 'B1-A区', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'cam-6', name: 'B1层B区摄像机', type: 'camera', location: 'B1-B区', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'cam-7', name: 'B2层D区摄像机', type: 'camera', location: 'B2-D区', status: 'online', lastHeartbeat: new Date().toISOString() },
-    { id: 'cam-8', name: 'B2层E区摄像机', type: 'camera', location: 'B2-E区', status: 'online', lastHeartbeat: new Date().toISOString() },
+    { id: 'gate-1', name: '东门入口道闸', type: 'gate', location: '东入口', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'A', floor: 'B1' },
+    { id: 'gate-2', name: '东门出口道闸', type: 'gate', location: '东出口', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'A', floor: 'B1' },
+    { id: 'gate-3', name: '南门入口道闸', type: 'gate', location: '南入口', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'D', floor: 'B2' },
+    { id: 'gate-4', name: '南门出口道闸', type: 'gate', location: '南出口', status: 'fault', lastHeartbeat: addHours(new Date(), -2).toISOString(), zone: 'D', floor: 'B2' },
+    { id: 'cam-1', name: '东入口摄像机', type: 'camera', location: '东入口', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'A', floor: 'B1' },
+    { id: 'cam-2', name: '东出口摄像机', type: 'camera', location: '东出口', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'A', floor: 'B1' },
+    { id: 'cam-3', name: '南入口摄像机', type: 'camera', location: '南入口', status: 'offline', lastHeartbeat: addHours(new Date(), -6).toISOString(), zone: 'D', floor: 'B2' },
+    { id: 'cam-4', name: '南出口摄像机', type: 'camera', location: '南出口', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'D', floor: 'B2' },
+    { id: 'cam-5', name: 'B1层A区摄像机', type: 'camera', location: 'B1-A区', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'A', floor: 'B1' },
+    { id: 'cam-6', name: 'B1层B区摄像机', type: 'camera', location: 'B1-B区', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'B', floor: 'B1' },
+    { id: 'cam-7', name: 'B2层D区摄像机', type: 'camera', location: 'B2-D区', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'D', floor: 'B2' },
+    { id: 'cam-8', name: 'B2层E区摄像机', type: 'camera', location: 'B2-E区', status: 'online', lastHeartbeat: new Date().toISOString(), zone: 'E', floor: 'B2' },
   ];
   return devices;
 }
@@ -246,6 +255,11 @@ export function generateTickets(): Ticket[] {
       history: [
         { id: 'h1', action: '创建工单', operator: '李客服', remark: '现场报告道闸故障', timestamp: subDays(new Date(), 0).toISOString() },
       ],
+      relatedObject: {
+        type: 'order',
+        id: 'gate-4',
+        displayName: '南门出口道闸',
+      },
     },
     {
       id: 'TK202401003',
@@ -315,39 +329,61 @@ export function generateZoneStats(): ZoneStats[] {
   });
 }
 
-export function generateHourlyTraffic(): HourlyTraffic[] {
+export function generateHourlyTraffic(days: number = 30): HourlyTraffic[] {
   const data: HourlyTraffic[] = [];
-  for (let i = 0; i < 24; i++) {
-    const hour = i.toString().padStart(2, '0') + ':00';
-    let entry = Math.floor(Math.random() * 30) + 10;
-    let exit = Math.floor(Math.random() * 25) + 5;
-    if (i >= 8 && i <= 10) entry = Math.floor(Math.random() * 50) + 40;
-    if (i >= 17 && i <= 20) {
-      entry = Math.floor(Math.random() * 60) + 50;
-      exit = Math.floor(Math.random() * 40) + 30;
-    }
-    if (i >= 0 && i <= 6) {
-      entry = Math.floor(Math.random() * 5);
-      exit = Math.floor(Math.random() * 3);
-    }
-    data.push({ hour, entry, exit });
-  }
-  return data;
-}
+  const now = new Date();
 
-export function generateDailyRevenue(): DailyRevenue[] {
-  const data: DailyRevenue[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = subDays(new Date(), i);
-    data.push({
-      date: formatDate(date),
-      revenue: Math.floor(Math.random() * 3000) + 5000,
-      orders: Math.floor(Math.random() * 200) + 100,
+  for (let d = 0; d < days; d++) {
+    const date = subDays(now, d);
+    const dateStr = format(date, 'MM/dd');
+
+    PARKING_ZONES.forEach((zone) => {
+      for (let i = 0; i < 24; i++) {
+        const hour = i.toString().padStart(2, '0') + ':00';
+        let entry = Math.floor(Math.random() * 15) + 5;
+        let exit = Math.floor(Math.random() * 12) + 3;
+
+        if (i >= 8 && i <= 10) entry = Math.floor(Math.random() * 30) + 20;
+        if (i >= 17 && i <= 20) {
+          entry = Math.floor(Math.random() * 35) + 25;
+          exit = Math.floor(Math.random() * 25) + 15;
+        }
+        if (i >= 0 && i <= 6) {
+          entry = Math.floor(Math.random() * 3);
+          exit = Math.floor(Math.random() * 2);
+        }
+
+        data.push({ hour, entry, exit, zone: zone.id, date: dateStr });
+      }
     });
   }
+
   return data;
 }
 
-function formatDate(date: Date): string {
-  return `${date.getMonth() + 1}/${date.getDate()}`;
+export function generateDailyRevenue(days: number = 30): DailyRevenue[] {
+  const data: DailyRevenue[] = [];
+  const now = new Date();
+
+  for (let i = days - 1; i >= 0; i--) {
+    const date = subDays(now, i);
+    const dateStr = format(date, 'MM/dd');
+    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+    const baseRevenue = isWeekend ? 8000 : 5000;
+    const baseOrders = isWeekend ? 300 : 180;
+
+    PARKING_ZONES.forEach((zone) => {
+      const zoneFactor = zone.spots / 100;
+      data.push({
+        date: dateStr,
+        revenue: Math.floor((Math.random() * 2000 + baseRevenue) * zoneFactor * 0.3),
+        orders: Math.floor((Math.random() * 100 + baseOrders) * zoneFactor * 0.3),
+        zone: zone.id,
+        entryTraffic: Math.floor(Math.random() * 50 + 80),
+        exitTraffic: Math.floor(Math.random() * 45 + 75),
+      });
+    });
+  }
+
+  return data;
 }

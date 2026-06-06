@@ -18,6 +18,9 @@ export interface VehicleRecord {
   isUnlicensed: boolean;
   correctedPlate?: string;
   tempPlate?: string;
+  orderId?: string;
+  zone?: string;
+  floor?: string;
 }
 
 export interface InvoiceInfo {
@@ -48,6 +51,10 @@ export interface Order {
   maxDailyRate: number;
   createdAt: string;
   paidAt?: string;
+  vehicleRecordId?: string;
+  zone?: string;
+  floor?: string;
+  ticketId?: string;
 }
 
 export interface Coupon {
@@ -76,6 +83,9 @@ export interface Device {
   location: string;
   status: 'online' | 'offline' | 'fault';
   lastHeartbeat: string;
+  ticketId?: string;
+  zone?: string;
+  floor?: string;
 }
 
 export interface TicketHistory {
@@ -118,12 +128,17 @@ export interface HourlyTraffic {
   hour: string;
   entry: number;
   exit: number;
+  zone?: string;
+  date?: string;
 }
 
 export interface DailyRevenue {
   date: string;
   revenue: number;
   orders: number;
+  zone?: string;
+  entryTraffic?: number;
+  exitTraffic?: number;
 }
 
 export interface BillingCalculation {

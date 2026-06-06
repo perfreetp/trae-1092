@@ -45,6 +45,7 @@ interface ParkingState {
   updateVehicleRecord: (id: string, updates: Partial<VehicleRecord>) => void;
   addOrder: (order: Order) => void;
   updateOrder: (id: string, updates: Partial<Order>) => void;
+  payOrder: (orderId: string) => { success: boolean; message: string };
   applyCoupon: (orderId: string, couponCode: string) => { success: boolean; message: string };
   requestInvoice: (orderId: string, invoiceInfo: InvoiceInfo) => { success: boolean; message: string };
   markOrderAbnormal: (orderId: string, remark: string) => void;
@@ -57,7 +58,9 @@ interface ParkingState {
   assignTicket: (ticketId: string, assignee: string) => void;
   updateTicketPriority: (ticketId: string, priority: Ticket['priority']) => void;
   linkRelatedObject: (ticketId: string, relatedObject: RelatedObject) => void;
-  calculateParkingFee: (plateNumber: string, entryTime: string) => Order;
+  createTicketFromOrder: (orderId: string) => Ticket | null;
+  createTicketFromDevice: (deviceId: string) => Ticket | null;
+  calculateParkingFee: (plateNumber: string, entryTime: string, vehicleRecordId?: string, zone?: string) => Order;
 }
 
 export const useParkingStore = create<ParkingState>((set, get) => ({
@@ -337,7 +340,7 @@ export const useParkingStore = create<ParkingState>((set, get) => ({
     }));
   },
 
-  calculateParkingFee: (plateNumber, entryTime) => {
+  calculateParkingFee: (plateNumber, entryTime, vehicleRecordId?, zone?) => {
     const exitTime = new Date().toISOString();
     const billing = calculateBilling(entryTime, exitTime);
 
@@ -358,6 +361,139 @@ export const useParkingStore = create<ParkingState>((set, get) => ({
       maxDailyRate: billing.maxDailyRate,
       createdAt: exitTime,
       paidAt: undefined,
+      vehicleRecordId,
+      zone,
+      floor: zone ? (['A', 'B', 'C'].includes(zone) ? 'B1' : 'B2') : undefined,
     };
+  },
+
+  payOrder: (orderId) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+
+    if (!order) {
+      return { success: false, message: '订单不存在' };
+    }
+
+    if (order.status === 'paid') {
+      return { success: false, message: '订单已支付' };
+    }
+
+    const now = new Date().toISOString();
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: 'paid' as const,
+              paidAt: now,
+            }
+          : o
+      ),
+    }));
+
+    if (order.vehicleRecordId) {
+      set((state) => ({
+        vehicleRecords: state.vehicleRecords.map((v) =>
+          v.id === order.vehicleRecordId
+            ? {
+                ...v,
+                status: 'exited' as const,
+                exitTime: now,
+                orderId,
+              }
+            : v
+        ),
+      }));
+    }
+
+    return { success: true, message: '支付成功' };
+  },
+
+  createTicketFromOrder: (orderId) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order) return null;
+
+    const now = new Date().toISOString();
+    const ticket: Ticket = {
+      id: 'TK' + Date.now().toString().slice(-6),
+      title: `订单异常处理 - ${order.id}`,
+      description: order.abnormalRemark || '订单标记为异常，需要人工处理',
+      type: 'complaint',
+      status: 'pending',
+      priority: 'medium',
+      assignee: '',
+      creator: state.currentUser,
+      createdAt: now,
+      updatedAt: now,
+      history: [
+        {
+          id: Math.random().toString(36).substring(2, 10),
+          action: '从异常订单创建工单',
+          operator: state.currentUser,
+          remark: `订单号：${order.id}，车牌号：${order.plateNumber}`,
+          timestamp: now,
+        },
+      ],
+      relatedObject: {
+        type: 'order',
+        id: order.id,
+        displayName: `${order.id} - ${order.plateNumber}`,
+      },
+    };
+
+    set((state) => ({
+      tickets: [ticket, ...state.tickets],
+      orders: state.orders.map((o) =>
+        o.id === orderId ? { ...o, ticketId: ticket.id } : o
+      ),
+    }));
+
+    return ticket;
+  },
+
+  createTicketFromDevice: (deviceId) => {
+    const state = get();
+    const device = state.devices.find((d) => d.id === deviceId);
+    if (!device) return null;
+
+    const now = new Date().toISOString();
+    const ticket: Ticket = {
+      id: 'TK' + Date.now().toString().slice(-6),
+      title: `设备故障处理 - ${device.name}`,
+      description: `设备${device.status === 'offline' ? '离线' : '故障'}，需要处理`,
+      type: 'fault',
+      status: 'pending',
+      priority: 'high',
+      assignee: '王运维',
+      creator: state.currentUser,
+      createdAt: now,
+      updatedAt: now,
+      history: [
+        {
+          id: Math.random().toString(36).substring(2, 10),
+          action: '从设备记录创建工单',
+          operator: state.currentUser,
+          remark: `设备：${device.name}，位置：${device.location}`,
+          timestamp: now,
+        },
+      ],
+      relatedObject: {
+        type: 'order',
+        id: device.id,
+        displayName: `${device.name} - ${device.location}`,
+      },
+    };
+
+    set((state) => ({
+      tickets: [ticket, ...state.tickets],
+      devices: state.devices.map((d) =>
+        d.id === deviceId ? { ...d, ticketId: ticket.id } : d
+      ),
+    }));
+
+    return ticket;
   },
 }));

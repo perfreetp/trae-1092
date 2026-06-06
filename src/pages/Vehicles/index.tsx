@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { Search, Filter, Edit, Plus, AlertCircle, Car as CarIcon, Check } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Search, Filter, Edit, Plus, AlertCircle, Car as CarIcon, Check, Receipt } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useParkingStore } from '@/store/useParkingStore';
 import { VehicleRecord } from '@/types';
-import { formatDateTime, generateRandomId } from '@/utils/format';
+import { formatDateTime, generateRandomId, formatCurrency } from '@/utils/format';
 
 export const Vehicles: React.FC = () => {
   const vehicleRecords = useParkingStore((state) => state.vehicleRecords);
+  const orders = useParkingStore((state) => state.orders);
   const updateVehicleRecord = useParkingStore((state) => state.updateVehicleRecord);
   const addVehicleRecord = useParkingStore((state) => state.addVehicleRecord);
 
@@ -19,13 +20,20 @@ export const Vehicles: React.FC = () => {
   const [newPlate, setNewPlate] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const filteredRecords = vehicleRecords.filter((r) => {
-    const matchSearch = r.plateNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (r.correctedPlate?.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (r.tempPlate?.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchStatus = filterStatus === 'all' || r.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const filteredRecords = useMemo(() => {
+    return vehicleRecords.filter((r) => {
+      const matchSearch = r.plateNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.correctedPlate?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (r.tempPlate?.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+      return matchSearch && matchStatus;
+    });
+  }, [vehicleRecords, searchQuery, filterStatus]);
+
+  const getRelatedOrder = (record: VehicleRecord) => {
+    if (!record.orderId) return null;
+    return orders.find((o) => o.id === record.orderId);
+  };
 
   const handleEditPlate = (record: VehicleRecord) => {
     setSelectedRecord(record);
@@ -121,56 +129,63 @@ export const Vehicles: React.FC = () => {
           <thead>
             <tr className="border-b border-slate-700">
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-400">车牌号</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-400">停车区域</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-400">入场时间</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-400">出场时间</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-400">状态</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-400">标记</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-400">关联订单</th>
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase text-slate-400">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700/50">
-            {filteredRecords.map((record) => (
-              <tr key={record.id} className="transition-colors hover:bg-slate-700/30">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <CarIcon className="h-4 w-4 text-slate-400" />
-                    <span className="font-medium text-white">{record.plateNumber}</span>
-                    {record.correctedPlate && record.correctedPlate !== record.plateNumber && (
-                      <span className="text-xs text-slate-500">→ {record.correctedPlate}</span>
+            {filteredRecords.map((record) => {
+              const relatedOrder = getRelatedOrder(record);
+              return (
+                <tr key={record.id} className="transition-colors hover:bg-slate-700/30">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <CarIcon className="h-4 w-4 text-slate-400" />
+                      <span className="font-medium text-white">{record.plateNumber}</span>
+                      {record.correctedPlate && record.correctedPlate !== record.plateNumber && (
+                        <span className="text-xs text-slate-500">→ {record.correctedPlate}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-300">
+                    {record.zone ? `${record.zone}区 (${record.floor})` : '-'}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-300">{formatDateTime(record.entryTime)}</td>
+                  <td className="px-4 py-3 text-sm text-slate-300">
+                    {record.exitTime ? formatDateTime(record.exitTime) : '-'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={record.status} />
+                  </td>
+                  <td className="px-4 py-3">
+                    {relatedOrder ? (
+                      <div className="flex items-center gap-1">
+                        <Receipt className="h-3 w-3 text-emerald-400" />
+                        <span className="text-xs text-emerald-400 font-mono">{relatedOrder.id}</span>
+                        <span className="text-xs text-slate-500">({formatCurrency(relatedOrder.paidAmount)})</span>
+                      </div>
+                    ) : record.orderId ? (
+                      <span className="text-xs text-slate-500 font-mono">{record.orderId}</span>
+                    ) : (
+                      <span className="text-xs text-slate-600">-</span>
                     )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-300">{formatDateTime(record.entryTime)}</td>
-                <td className="px-4 py-3 text-sm text-slate-300">
-                  {record.exitTime ? formatDateTime(record.exitTime) : '-'}
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={record.status} />
-                </td>
-                <td className="px-4 py-3">
-                  {record.isUnlicensed && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/20 px-2 py-0.5 text-xs text-yellow-400">
-                      <AlertCircle className="h-3 w-3" />
-                      无牌车
-                    </span>
-                  )}
-                  {record.tempPlate && !record.isUnlicensed && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/20 px-2 py-0.5 text-xs text-blue-400">
-                      临时车牌
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => handleEditPlate(record)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-blue-400 hover:bg-blue-500/10"
-                  >
-                    <Edit className="h-3 w-3" />
-                    纠错
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => handleEditPlate(record)}
+                      className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-blue-400 hover:bg-blue-500/10"
+                    >
+                      <Edit className="h-3 w-3" />
+                      纠错
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
