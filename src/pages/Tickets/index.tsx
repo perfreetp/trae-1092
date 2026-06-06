@@ -66,7 +66,11 @@ export const Tickets: React.FC = () => {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
-      return filterStatus === 'all' || t.status === filterStatus;
+      if (filterStatus === 'all') return true;
+      if (filterStatus === 'pending') {
+        return t.status === 'pending' || t.status === 'processing';
+      }
+      return t.status === filterStatus;
     });
   }, [tickets, filterStatus]);
 
